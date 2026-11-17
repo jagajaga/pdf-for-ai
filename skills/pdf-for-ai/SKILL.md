@@ -13,7 +13,8 @@ Same answers from the model.
 
 ## How
 
-1. Write the content as Markdown, real paragraphs (not one line per wrapped line).
+1. Write the content as Markdown, real paragraphs (not one line per wrapped line);
+   images as `![caption](chart.png)` on their own line.
 2. Run `python3 {baseDir}/pdf_for_ai.py input.md output.pdf`
    (standard library only; fonts found automatically, or `--font R.ttf --bold B.ttf`).
 3. Check: it prints the page count; open the text with any PDF text tool if unsure.
@@ -25,7 +26,8 @@ Same answers from the model.
 
 ## Rules
 
-- Charts or images the AI must see: put them on normal-size pages (a tall page image
-  is downscaled to a strip). pdf_for_ai.py makes text documents only.
+- Charts and pictures: put `![caption](file.png)` on its own line (PNG/JPEG). Each figure
+  automatically gets its own normal-size page so the AI reads it in full; never draw a
+  figure onto a tall text page (tested: the AI then cannot read the chart's values).
 - Never hide extra text in a PDF (white text, invisible layers, attachments for the AI):
   APIs ignore attachments and hidden text is a prompt-injection pattern.

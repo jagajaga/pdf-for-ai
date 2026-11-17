@@ -3,7 +3,7 @@
 Usage: ANTHROPIC_API_KEY=... [OPENAI_API_KEY=...] python3 bench/count_tokens.py doc.md"""
 import base64, json, os, sys, tempfile, urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from pdf_for_ai import PdfForAI, markdown_to_blocks, find_fonts
+from pdf_for_ai import PdfForAI, markdown_to_blocks, find_fonts, blocks_text
 
 def post(url, headers, body):
     req = urllib.request.Request(url, json.dumps(body).encode(), {**headers, 'content-type': 'application/json'})
@@ -20,7 +20,7 @@ def openai(content, model):
                 {'model': model, 'max_output_tokens': 16, 'input': [{'role': 'user', 'content': content}]})['usage']['input_tokens']
 
 md = open(sys.argv[1], encoding='utf-8').read()
-blocks = markdown_to_blocks(md)
+blocks = markdown_to_blocks(md, os.path.dirname(os.path.abspath(sys.argv[1])))
 text = '\n'.join(t for _, t in blocks)
 text_hi = text + '\nhi'
 tmp = tempfile.mkdtemp()

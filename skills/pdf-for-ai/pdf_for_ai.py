@@ -13,11 +13,14 @@ automatically on Linux, macOS and Windows, or pass --font/--bold.
   python3 pdf_for_ai.py input.md output.pdf          # lean (default)
   python3 pdf_for_ai.py input.md output.pdf --a4     # classic A4, for print
 
+Images: put ![caption](chart.png) on its own line (PNG or JPEG). Each figure gets
+its own normal-size page, so the AI sees it at full resolution; text stays tall.
+
 License: MIT. https://github.com/jagajaga/pdf-for-ai
 """
 import argparse, os, re, struct, sys, zlib
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 FONT_CANDIDATES = [
     ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -157,15 +160,102 @@ def _pdf_string(s):
     return '<FEFF' + s.encode('utf-16-be').hex().upper() + '>'
 
 
+def _png_unfilter(raw, w, h, bpp):
+    stride = w * bpp
+    out = bytearray(stride * h)
+    prev = bytearray(stride)
+    pos = 0
+    for row in range(h):
+        ft = raw[pos]; line = bytearray(raw[pos + 1:pos + 1 + stride]); pos += 1 + stride
+        if ft == 1:
+            for i in range(bpp, stride):
+                line[i] = (line[i] + line[i - bpp]) & 255
+        elif ft == 2:
+            line = bytearray((x + y) & 255 for x, y in zip(line, prev))
+        elif ft == 3:
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 255
+        elif ft == 4:
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0
+                b = prev[i]; c = prev[i - bpp] if i >= bpp else 0
+                p = a + b - c; pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 255
+        out[row * stride:(row + 1) * stride] = line
+        prev = line
+    return out
+
+
+def load_image(path):
+    """PNG (8-bit, non-interlaced; transparency is flattened onto white) or JPEG.
+    Returns dict(w, h, dict=<PDF stream dict entries>, data=<bytes>)."""
+    data = open(path, 'rb').read()
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        pos, idat, plte, trns = 8, bytearray(), None, None
+        while pos < len(data):
+            ln, typ = struct.unpack('>I4s', data[pos:pos + 8]); body = data[pos + 8:pos + 8 + ln]; pos += 12 + ln
+            if typ == b'IHDR':
+                w, h, bd, ct, _, _, il = struct.unpack('>IIBBBBB', body)
+            elif typ == b'PLTE':
+                plte = body
+            elif typ == b'tRNS':
+                trns = body
+            elif typ == b'IDAT':
+                idat += body
+        if bd != 8 or il:
+            raise ValueError(f"{path}: only 8-bit non-interlaced PNG is supported (re-save it)")
+        ch = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ct]
+        if ct in (0, 2) or (ct == 3 and not trns):  # pass the compressed data straight through
+            cs = {0: '/DeviceGray', 2: '/DeviceRGB'}.get(ct) or f"[/Indexed /DeviceRGB {len(plte) // 3 - 1} <{plte.hex()}>]"
+            return dict(w=w, h=h, data=bytes(idat), dict=f"/ColorSpace {cs} /BitsPerComponent 8 /Filter /FlateDecode "
+                        f"/DecodeParms << /Predictor 15 /Colors {ch} /BitsPerComponent 8 /Columns {w} >>")
+        px = _png_unfilter(zlib.decompress(bytes(idat)), w, h, ch)
+        if ct == 3:  # palette with transparency -> RGB on white
+            alpha = list(trns) + [255] * 256
+            rgb = bytearray()
+            for i in px:
+                a = alpha[i]; r, g, b = plte[3 * i:3 * i + 3]
+                rgb += bytes(((r * a + 255 * (255 - a)) // 255, (g * a + 255 * (255 - a)) // 255, (b * a + 255 * (255 - a)) // 255))
+            out, cs = rgb, '/DeviceRGB'
+        else:  # gray+alpha or RGBA -> flatten on white
+            n = ch - 1
+            out = bytearray()
+            for i in range(0, len(px), ch):
+                a = px[i + n]
+                out += bytes((px[i + k] * a + 255 * (255 - a)) // 255 for k in range(n))
+            cs = '/DeviceGray' if n == 1 else '/DeviceRGB'
+        return dict(w=w, h=h, data=zlib.compress(bytes(out)), dict=f"/ColorSpace {cs} /BitsPerComponent 8 /Filter /FlateDecode")
+    if data[:2] == b'\xff\xd8':
+        pos = 2
+        while pos < len(data):
+            while data[pos] == 0xFF and data[pos + 1] == 0xFF:
+                pos += 1
+            marker, ln = data[pos + 1], struct.unpack('>H', data[pos + 2:pos + 4])[0]
+            if marker in (0xC0, 0xC1, 0xC2):
+                h, w = struct.unpack('>HH', data[pos + 5:pos + 9]); comps = data[pos + 9]
+                cs = {1: '/DeviceGray', 3: '/DeviceRGB', 4: '/DeviceCMYK'}[comps]
+                dec = " /Decode [1 0 1 0 1 0 1 0]" if comps == 4 else ""
+                return dict(w=w, h=h, data=data, dict=f"/ColorSpace {cs} /BitsPerComponent 8 /Filter /DCTDecode{dec}")
+            pos += 2 + ln
+        raise ValueError(f"{path}: JPEG size not found")
+    raise ValueError(f"{path}: only PNG and JPEG images are supported")
+
+
 class PdfForAI:
     STYLES = {  # size, bold, gap before, gap after, indent
         'h1': (18, True, 18, 8, 0), 'h2': (14, True, 14, 6, 0), 'h3': (12, True, 10, 4, 0),
         'p': (10.5, False, 0, 6, 0), 'li': (10.5, False, 1, 2, 14), 'pre': (9.5, False, 0, 0, 10),
     }
+    CAPTION = 9.5
 
-    def __init__(self, regular_ttf, bold_ttf, layout='lean', margin=56, leading=1.38):
+    def __init__(self, regular_ttf, bold_ttf, layout='lean', margin=56, leading=1.38, figure_pages=True):
+        """figure_pages (lean layout): each image gets its own normal-size page, so the
+        AI's page image shows it at full resolution. Text stays on tall pages."""
         self.fr, self.fb = parse_ttf(regular_ttf), parse_ttf(bold_ttf)
         self.layout, self.margin, self.leading = layout, margin, leading
+        self.figure_pages = figure_pages
         self.width = A4_W
 
     def page_height(self, i):
@@ -193,34 +283,70 @@ class PdfForAI:
         return lines
 
     def layout_blocks(self, blocks):
-        pages, cur = [], []
-        y = self.page_height(0) - self.margin
+        """Returns pages: dicts {h, items, fixed}; items are
+        ('t', text, bold, size, x, y) and ('i', image, x, y, w, h)."""
+        pages = []
         content_w = self.width - 2 * self.margin
+        page = {'h': self.page_height(0), 'items': [], 'fixed': False}
+        y = page['h'] - self.margin
 
         def new_page():
-            nonlocal y, cur
-            pages.append(cur); cur = []
-            y = self.page_height(len(pages)) - self.margin
+            nonlocal y, page
+            if page['items']:
+                pages.append(page)
+            page = {'h': self.page_height(len(pages)), 'items': [], 'fixed': False}
+            y = page['h'] - self.margin
 
-        for kind, text in blocks:
+        for kind, val in blocks:
+            if kind == 'img':
+                img = val['image']
+                cap = self.wrap(val['alt'], self.fr, self.CAPTION, content_w) if val['alt'] else []
+                cap_h = (len(cap) * self.CAPTION * self.leading + 8) if cap else 0
+                max_h = A4_H - 2 * self.margin - cap_h
+                scale = min(content_w / img['w'], max_h / img['h'])
+                w, h = img['w'] * scale, img['h'] * scale
+                x = self.margin + (content_w - w) / 2
+                if self.layout == 'lean' and self.figure_pages:
+                    if page['items']:
+                        pages.append(page)
+                    ph = round(h + cap_h + 2 * self.margin, 2)  # page fits the figure
+                    fig = {'h': ph, 'items': [('i', img, x, ph - self.margin - h, w, h)], 'fixed': True}
+                    cy = ph - self.margin - h - 8
+                    for ln in cap:
+                        cy -= self.CAPTION * self.leading
+                        fig['items'].append(('t', ln, False, self.CAPTION, self.margin, cy))
+                    pages.append(fig)
+                    page = {'h': LEAN_PAGE_H, 'items': [], 'fixed': False}
+                    y = page['h'] - self.margin
+                    continue
+                if y - (h + cap_h + 12) < self.margin and page['items']:
+                    new_page()
+                y -= 6 + h
+                page['items'].append(('i', img, x, y, w, h))
+                y -= 8
+                for ln in cap:
+                    y -= self.CAPTION * self.leading
+                    page['items'].append(('t', ln, False, self.CAPTION, self.margin, y))
+                y -= 6
+                continue
             size, bold, gap_b, gap_a, indent = self.STYLES.get(kind, self.STYLES['p'])
             font = self.fb if bold else self.fr
             if kind == 'pre':
-                lines = [text] if text else ['']
+                lines = [val] if val else ['']
             else:
-                lines = self.wrap(('\u2022 ' if kind == 'li' else '') + text, font, size, content_w - indent)
+                lines = self.wrap(('\u2022 ' if kind == 'li' else '') + val, font, size, content_w - indent)
             lh = size * self.leading
-            if y - (gap_b + len(lines) * lh + gap_a) < self.margin and cur and (kind.startswith('h') or len(lines) < 8):
+            if y - (gap_b + len(lines) * lh + gap_a) < self.margin and page['items'] and (kind.startswith('h') or len(lines) < 8):
                 new_page()  # keep headings and short blocks together
             y -= gap_b
             for ln in lines:
                 if y - lh < self.margin:
                     new_page()
                 y -= lh
-                cur.append((ln, bold, size, self.margin + indent, y))
+                page['items'].append(('t', ln, bold, size, self.margin + indent, y))
             y -= gap_a
-        if cur:
-            pages.append(cur)
+        if page['items']:
+            pages.append(page)
         return pages
 
     def build(self, blocks, out_path, title=None):
@@ -247,20 +373,35 @@ class PdfForAI:
                              f"/DescendantFonts [{cid} 0 R] /ToUnicode {tu} 0 R >>"))
 
         f1, f2 = embed(self.fr, 'PdfForAIRegular'), embed(self.fb, 'PdfForAIBold')
+        img_objs = {}
         kids = []
-        for i, lines in enumerate(pages):
-            top = self.page_height(i)
+        for pg in pages:
+            top, items = pg['h'], pg['items']
             bottom = 0
-            if top > A4_H:  # trim unused space, keep at least an A4-tall page
-                bottom = min(max(0, int(min(l[4] for l in lines) - self.margin)), int(top - A4_H))
-            ops = ["BT"]
-            for text, bold, size, x, y in lines:
-                font = self.fb if bold else self.fr
-                hexs = ''.join('%04x' % font['unicode_to_gid'].get(ord(c), 0) for c in text)
-                ops += [f"/{'F2' if bold else 'F1'} {size} Tf", f"1 0 0 1 {x:.2f} {y:.2f} Tm", f"<{hexs}> Tj"]
+            if top > A4_H and not pg['fixed']:  # trim unused space, keep at least an A4-tall page
+                low = min(it[5] if it[0] == 't' else it[3] for it in items)
+                bottom = min(max(0, int(low - self.margin)), int(top - A4_H))
+            ops, xobj = [], []
+            for it in items:
+                if it[0] == 'i':
+                    img, x, y, w, h = it[1:]
+                    key = id(img)
+                    if key not in img_objs:
+                        img_objs[key] = add(('S', f"/Type /XObject /Subtype /Image /Width {img['w']} /Height {img['h']} {img['dict']}", img['data']))
+                    name = f"Im{img_objs[key]}"
+                    xobj.append(f"/{name} {img_objs[key]} 0 R")
+                    ops.append(f"q {w:.2f} 0 0 {h:.2f} {x:.2f} {y:.2f} cm /{name} Do Q")
+            ops.append("BT")
+            for it in items:
+                if it[0] == 't':
+                    _, text, bold, size, x, y = it
+                    font = self.fb if bold else self.fr
+                    hexs = ''.join('%04x' % font['unicode_to_gid'].get(ord(c), 0) for c in text)
+                    ops += [f"/{'F2' if bold else 'F1'} {size} Tf", f"1 0 0 1 {x:.2f} {y:.2f} Tm", f"<{hexs}> Tj"]
             ops.append("ET")
             content = add(('Z', zlib.compress("\n".join(ops).encode())))
-            kids.append(add(('D', f"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >> >> "
+            xres = f" /XObject << {' '.join(sorted(set(xobj)))} >>" if xobj else ""
+            kids.append(add(('D', f"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >>{xres} >> "
                                   f"/MediaBox [0 {bottom} {self.width} {top}] /Contents {content} 0 R >>")))
         objs[1] = ('D', f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>")
         objs[0] = ('D', f"<< /Type /Catalog /Pages 2 0 R /OpenAction [{kids[0]} 0 R /FitH null] "
@@ -269,13 +410,16 @@ class PdfForAI:
 
         out = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
-        for n, (kind, body) in enumerate(objs, 1):
+        for n, obj in enumerate(objs, 1):
             offsets.append(len(out))
+            kind = obj[0]
             if kind == 'D':
-                out += f"{n} 0 obj\n{body}\nendobj\n".encode()
+                out += f"{n} 0 obj\n{obj[1]}\nendobj\n".encode()
+            elif kind == 'S':
+                out += f"{n} 0 obj\n<< /Length {len(obj[2])} {obj[1]} >>\nstream\n".encode() + obj[2] + b"\nendstream\nendobj\n"
             else:
                 filt = " /Filter /FlateDecode" if kind == 'Z' else ""
-                out += f"{n} 0 obj\n<< /Length {len(body)}{filt} >>\nstream\n".encode() + body + b"\nendstream\nendobj\n"
+                out += f"{n} 0 obj\n<< /Length {len(obj[1])}{filt} >>\nstream\n".encode() + obj[1] + b"\nendstream\nendobj\n"
         xref = len(out)
         out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
         out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
@@ -294,9 +438,15 @@ def _inline(s):
     return s.replace('\t', '    ')
 
 
-def markdown_to_blocks(md):
+def blocks_text(blocks):
+    """Plain text of the blocks (image captions included), e.g. for token comparisons."""
+    return '\n'.join(v['alt'] if k == 'img' else v for k, v in blocks)
+
+
+def markdown_to_blocks(md, base_dir='.'):
     """Small Markdown reader: headings, paragraphs (soft-wrapped lines are joined),
-    bullet and numbered lists, block quotes, code blocks, tables (as text rows)."""
+    bullet and numbered lists, block quotes, code blocks, tables (as text rows), and
+    images on their own line: ![caption](chart.png) (PNG or JPEG, path relative to the file)."""
     blocks, para = [], []
 
     def flush():
@@ -315,6 +465,17 @@ def markdown_to_blocks(md):
             flush(); continue
         if re.fullmatch(r'[-*_]{3,}', s):
             flush(); continue
+        m = re.fullmatch(r'!\[([^\]]*)\]\(\s*<?([^)>]+?)>?(?:\s+"[^"]*")?\s*\)', s)
+        if m:
+            flush()
+            alt, p = _inline(m.group(1)), m.group(2)
+            path = p if os.path.isabs(p) else os.path.join(base_dir, p)
+            try:
+                blocks.append(('img', {'alt': alt, 'path': path, 'image': load_image(path)}))
+            except (OSError, ValueError, KeyError) as e:
+                print(f"warning: image skipped: {e}", file=sys.stderr)
+                blocks.append(('p', f"[image: {alt}]"))
+            continue
         m = re.match(r'^(#{1,6})\s+(.*?)\s*#*$', s)
         if m:
             flush(); blocks.append((('h1', 'h2', 'h3')[min(len(m.group(1)), 3) - 1], _inline(m.group(2)))); continue
@@ -356,7 +517,7 @@ def main(argv=None):
     reg, bold = (a.font, a.bold or a.font) if a.font else find_fonts()
     if not reg:
         sys.exit("No TrueType font found. Pass --font Regular.ttf --bold Bold.ttf (.ttc collections are not supported).")
-    blocks = markdown_to_blocks(md)
+    blocks = markdown_to_blocks(md, base_dir='.' if a.input == '-' else os.path.dirname(os.path.abspath(a.input)))
     title = a.title or next((t for k, t in blocks if k == 'h1'), None)
     n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean').build(blocks, a.output, title=title)
     print(f"{a.output}: {n} page(s), {'A4' if a.a4 else 'lean'} layout")

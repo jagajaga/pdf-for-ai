@@ -37,7 +37,7 @@ python3 pdf_for_ai.py notes.md notes.pdf          # lean (default)
 python3 pdf_for_ai.py notes.md notes-print.pdf --a4   # classic A4 for printing
 ```
 
-Python 3.8+, standard library only. Needs a TrueType font pair; Liberation/DejaVu (Linux), Arial (macOS, Windows) are found automatically, or pass `--font Regular.ttf --bold Bold.ttf`. Any script the font covers works (Latin, Cyrillic, Greek...). Reads headings, paragraphs, bullet and numbered lists, quotes, code blocks and tables (tables become text rows).
+Python 3.8+, standard library only. Needs a TrueType font pair; Liberation/DejaVu (Linux), Arial (macOS, Windows) are found automatically, or pass `--font Regular.ttf --bold Bold.ttf`. Any script the font covers works (Latin, Cyrillic, Greek...). Reads headings, paragraphs, bullet and numbered lists, quotes, code blocks, tables (as text rows) and images (see below). PNG transparency is flattened onto white.
 
 As a library:
 
@@ -47,6 +47,20 @@ PdfForAI(*find_fonts()).build(markdown_to_blocks(md), "out.pdf")
 ```
 
 **For AI agents:** `skills/pdf-for-ai/SKILL.md` is a ready skill (Claude Code, OpenClaw, Codex and other Agent Skills tools): the agent then makes every PDF lean.
+
+## Charts and pictures
+
+Put an image on its own line: `![Figure 1: Revenue by month](chart.png)` (PNG or JPEG, path relative to the Markdown file). pdf-for-ai gives every figure **its own normal-size page**, sized to the figure, with the caption under it; text before and after stays on tall pages. So the AI's page image shows the figure at full resolution, and each figure costs one page image (~1,560 tokens on Claude).
+
+Tested: a 6,500-word document with a bar chart whose values exist only in the picture. Asked "what value does each month have?":
+
+| Layout | Claude Opus 5.5 | GPT-5.5 | Claude tokens |
+|---|---|---|---|
+| **pdf-for-ai** (figure on its own page) | correct | correct | 15,359 |
+| chart drawn on a tall text page | "can't read it" | wrong numbers | 12,366 |
+| classic A4 | correct | correct | 22,957 |
+
+So figures are read exactly as well as in an A4 PDF, at a third fewer tokens.
 
 ## Measure it yourself
 
@@ -58,7 +72,6 @@ builds A4 and lean versions and prints Claude's token count for each and for the
 ## When not to use it
 
 - **Printing or signing** (letters, contracts, forms): use `--a4`. A tall page does not fit on paper.
-- **Charts and pictures the AI must see:** on a tall page the page image is shrunk to a thin strip, so the AI reads the text but not the figure. Keep figures on normal-size pages. (pdf-for-ai itself makes text documents.)
 - Chat apps (ChatGPT, claude.ai, Gemini app) may process uploads differently from the APIs; the numbers above are API numbers.
 
 ## Why not hide a Markdown copy inside the PDF?

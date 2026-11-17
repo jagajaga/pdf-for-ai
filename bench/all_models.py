@@ -3,7 +3,7 @@
 Usage: ANTHROPIC_API_KEY=... OPENAI_API_KEY=... python3 bench/all_models.py doc1.md [doc2.md ...]"""
 import base64, json, os, sys, tempfile, urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from pdf_for_ai import PdfForAI, markdown_to_blocks, find_fonts
+from pdf_for_ai import PdfForAI, markdown_to_blocks, find_fonts, blocks_text
 def post(url, h, b):
     req=urllib.request.Request(url, json.dumps(b).encode(), {**h,'content-type':'application/json'})
     try:

@@ -17,7 +17,7 @@ def oai(m, c):
     j=post('https://api.openai.com/v1/responses/input_tokens',OK,{'model':m,'input':[{'role':'user','content':c}]}); return j.get('input_tokens', j)
 docs={os.path.basename(p): p for p in sys.argv[1:]}
 CL=['claude-opus-5-5','claude-sonnet-5-5','claude-haiku-5-5','claude-fable-5-2']
-OA=['gpt-5.5','gpt-5.5-pro','gpt-5.4-mini','gpt-5.4-nano']
+OA=['gpt-6.2-astra','gpt-6.2-sol','gpt-6.1-terra','gpt-6-luna','gpt-5.5']
 out=[]
 for dn, path in docs.items():
     blocks=markdown_to_blocks(open(path,encoding='utf-8').read()); text='\n'.join(t for _,t in blocks)+'\nhi'

@@ -38,7 +38,7 @@ if os.environ.get('ANTHROPIC_API_KEY'):
         print(f'  {k:5} PDF ({n} pages): {claude(doc(b), m):>8,}')
     print(f'  plain text      : {claude(text_hi, m):>8,}')
 if os.environ.get('OPENAI_API_KEY'):
-    m = os.environ.get('OPENAI_MODEL', 'gpt-5.5')
+    m = os.environ.get('OPENAI_MODEL', 'gpt-6.2-astra')
     doc = lambda b: [{'type': 'input_file', 'filename': 'd.pdf', 'file_data': 'data:application/pdf;base64,' + b}, {'type': 'input_text', 'text': 'hi'}]
     print(m)
     for k, (n, b) in pdfs.items():

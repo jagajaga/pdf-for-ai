@@ -25,7 +25,7 @@ Two text documents, each made with `pdf_for_ai.py` as A4 and as tall pages; inpu
 | Model | A4 PDF | tall PDF | plain text |
 |---|---|---|---|
 | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.2 | 121,167 | 61,807 | 58,631 |
-| GPT-5.5, GPT-5.5 Pro, GPT-5.4 mini, GPT-5.4 nano | 40,859 | 40,391 | 38,924 |
+| GPT-6.2 Astra, 6.2 Sol, 6.1, 6, 5.6, 5.5 | 40,859 | 40,391 | 38,924 |
 
 **6,500 words** (A4: 6 pages, tall: 2 pages)
 
@@ -35,7 +35,7 @@ Two text documents, each made with `pdf_for_ai.py` as A4 and as tall pages; inpu
 | GPT (all four above) | 7,027 | 6,975 | 6,633 |
 
 - **Claude: 1.6-2x cheaper.** Almost all of what's left over plain text is the A4 first page (~1,580) and line breaks (~0.8 token per printed line).
-- **GPT: about the same either way.** GPT makes no picture of a text-only page (about 16 tokens per page); only pages with a bitmap get one (~335 tokens at the default `detail`, ~1,000 at `high`; OpenAI's docs say `high` becomes the default from GPT-5.6). GPT's tokenizer also needs ~35% fewer tokens for the same text.
+- **GPT: about the same either way.** GPT makes no picture of a text-only page (about 16 tokens per page); only pages with a bitmap get one (GPT-5.5: ~335 tokens at the default `detail`; GPT-5.6 and GPT-6 use high detail by default, ~1,000 per figure page). GPT's tokenizer also needs ~35% fewer tokens for the same text.
 - **Gemini** (from Google's docs, not measured): each page costs 280, 560 (default) or 1,120 tokens by `media_resolution`, plus the text.
 - **Same answers.** With no special prompt, Claude Opus 5.5 and GPT-5.5 answered the same content questions correctly from the tall and the A4 file.
 - The less text per page, the bigger the saving: a typical PDF page is ~2,400 tokens uploaded vs ~900 as text ([FileConcat, 195 PDFs](https://fileconcat.com/blog/how-many-tokens-is-a-pdf-in-claude)).
@@ -50,7 +50,7 @@ Tokens are not comparable between providers (GPT's tokenizer packs ~4.3 English 
 |---|---|---|---|
 | Claude (all 4 models) | English | 2.23 | **1.05** |
 | Claude | Russian | 2.10 | **1.06** |
-| GPT (all 4 models) | English | 1.05 | 1.04 |
+| GPT (GPT-6.2 Astra/Sol, 6.1, 6, 5.6, 5.5: all count identically) | English | 1.05 | 1.04 |
 | GPT | Russian | 1.08 | 1.07 |
 
 **Dollars per document (input only, list prices on 17 Nov 2026)**
@@ -61,12 +61,12 @@ Tokens are not comparable between providers (GPT's tokenizer packs ~4.3 English 
 | Claude Opus 5.5 | 4 | $0.64 | $0.30 | $0.29 |
 | Claude Sonnet 5.5 | 2 | $0.32 | $0.15 | $0.14 |
 | Claude Haiku 5.5 | 0.10 / 0.50 over 100k | $0.080 | $0.007 | $0.007 |
-| GPT-5.5 Pro | 30 | $1.46 | $1.44 | $1.39 |
-| GPT-5.5 | 5 | $0.24 | $0.24 | $0.23 |
-| GPT-5.4 mini | 0.75 | $0.037 | $0.036 | $0.035 |
-| GPT-5.4 nano | 0.20 | $0.010 | $0.010 | $0.009 |
+| GPT-6.2 Astra | 8 | $0.39 | $0.39 | $0.37 |
+| GPT-6.2 Sol | 2 | $0.098 | $0.096 | $0.093 |
+| GPT-6.1 Terra | 1 | $0.049 | $0.048 | $0.046 |
+| GPT-6 Luna | 0.10 | $0.0049 | $0.0048 | $0.0046 |
 
-(English shown; Russian is within ~10%.) On Claude Haiku 5.5 the A4 PDF crosses the 100k-token price step, so it costs 11x the pdf-for-ai file. On GPT the layout barely matters: GPT already makes no picture of text pages.
+(English shown; Russian is within ~10%.) On Claude Haiku 5.5 the A4 PDF crosses the 100k-token price step, so it costs 11x the pdf-for-ai file. On GPT the layout barely matters for text: GPT makes no picture of text-only pages (GPT-6 included).
 
 ## Use
 
@@ -88,19 +88,22 @@ PdfForAI(*find_fonts()).build(markdown_to_blocks(md), "out.pdf")
 
 ## Charts and pictures
 
-Put an image on its own line: `![Figure 1: Revenue by month](chart.png)` (PNG or JPEG, path relative to the Markdown file). pdf-for-ai keeps a **small copy in the text** for people and puts the **full-size figure on a normal-size page at the end** with its caption. The AI reads the figure at full resolution, and the text stays in one piece: every figure page in the middle used to cut the text into short pages that each cost a full page picture.
+Put an image on its own line: `![Figure 1: Revenue by month](chart.png)` (PNG or JPEG, path relative to the Markdown file). pdf-for-ai puts the **full-size figure on a normal-size page at the end** with its caption, and leaves a visible line in the text: `[Figure 1: Revenue by month: full-size figure at the end of the document]`. The AI reads the figure at full resolution and the text stays in one piece. `--inline-copies` also draws a small copy in the text for people.
 
-6,500 words with 3 bar charts whose values exist only in the pictures; asked for the six values of Figure 2:
+6,500 words with 3 bar charts whose values exist only in the pictures (input tokens; "correct" = all six values of Figure 2 right, real calls):
 
-| Layout | Pages | Claude Opus 5.5 | GPT-5.5 | Claude tokens | GPT tokens |
-|---|---|---|---|---|---|
-| **v0.3: small copy in text, full size at the end** | 5 | correct | correct | 17,083 | 8,954 |
-| `--figures-per-page 3` (one grid page) | 3 | correct | not tested | 13,951 | 8,290 |
-| v0.2: each figure on its own page where it occurs | 8 | | | 21,701 | 7,997 |
-| chart drawn on a tall text page (no figure page) | | "can't read it" | wrong numbers | | |
+| Layout | Claude Opus 5.5 | GPT-5.5 | GPT-6.2 Astra |
+|---|---|---|---|
+| **default (v0.3.1): figures at the end** | 17,211, correct | 8,058, correct | 10,009 |
+| `--inline-copies` | 17,083, correct | 8,954, correct | 12,626 |
+| `--figures-per-page 3` | 13,951, correct | 8,290 | |
+| v0.2: figure pages where they occur | 21,701 | 7,997 | |
+| A4 | | | 13,603 |
+| chart drawn on a tall text page | "can't read it" | wrong numbers | |
 
-- GPT pays ~950 more for v0.3 than v0.2 because the tall page now holds bitmaps (the small copies); Claude pays 21% less.
-- **Grids are for Claude only.** In separate tests Claude read 18 of 18 values from 8 charts on one page; GPT-5.5 at default detail misread a 3-chart grid (it reads it with `detail: high`). Default stays one figure per page.
+- Small copies in the text cost GPT-6 26% more (a tall page holding bitmaps gets a high-detail page image), so they are off by default.
+- GPT-6 answers were not tested: this API key can count GPT-6 tokens but not run GPT-6.
+- **Grids are for Claude only.** Claude read 18 of 18 values from 8 charts on one page; GPT-5.5 at default detail misread a 3-chart grid.
 - **Put the numbers in text too** if they matter: a short data line or pipe table under the caption reaches every model and every text-only pipeline.
 
 ## Headings, tables and dense pages

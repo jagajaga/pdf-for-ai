@@ -13,9 +13,10 @@ automatically on Linux, macOS and Windows, or pass --font/--bold.
   python3 pdf_for_ai.py input.md output.pdf          # lean (default)
   python3 pdf_for_ai.py input.md output.pdf --a4     # classic A4, for print
 
-Images: put ![caption](chart.png) on its own line (PNG or JPEG). A small copy stays
-in the text; the full-size figure goes on a normal-size page at the end, so the AI
-sees it at full resolution and the text stays in one cheap piece.
+Images: put ![caption](chart.png) on its own line (PNG or JPEG). The full-size figure
+goes on a normal-size page at the end and a reference line stays in the text, so the
+AI sees it at full resolution and the text stays in one cheap piece
+(--inline-copies adds a small copy in the text for people).
 Headings are numbered (1, 1.1) unless the source already numbers them: the AI gets
 headings as plain lines, and numbers keep the levels visible.
 
@@ -23,7 +24,7 @@ License: MIT. https://github.com/jagajaga/pdf-for-ai
 """
 import argparse, os, re, struct, sys, zlib
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 FONT_CANDIDATES = [
     ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -257,9 +258,11 @@ class PdfForAI:
     THIN_GLYPHS_PER_PAGE = 35000  # GPT text got damaged above ~50k on one page; keep margin
 
     def __init__(self, regular_ttf, bold_ttf, layout='lean', margin=56, leading=1.38,
-                 figure_pages=True, figures_per_page=1, number_headings='auto'):
-        """figure_pages (lean): a small copy of each figure stays in the text and the full-size
-        figure goes on a normal-size page at the end (keeps the text in one cheap piece).
+                 figure_pages=True, figures_per_page=1, number_headings='auto', inline_copies=False):
+        """figure_pages (lean): each figure goes full size on a normal-size page at the end and
+        a visible reference line stays in the text (keeps the text in one cheap piece).
+        inline_copies: also draw a small copy in the text for people (costs GPT-6 ~26% more:
+        a tall page holding bitmaps gets a page image there).
         figures_per_page > 1: grid of figures on each end page (Claude reads it; GPT-5.5 at
         default detail does not). number_headings: 'auto' (number if the source has no numbers),
         True or False; numbers make heading levels visible to AI, which gets headings as plain lines."""
@@ -267,6 +270,7 @@ class PdfForAI:
         self.layout, self.margin, self.leading = layout, margin, leading
         self.figure_pages, self.figures_per_page = figure_pages, max(1, int(figures_per_page))
         self.number_headings = number_headings
+        self.inline_copies = inline_copies
         self.width = A4_W
 
     def page_height(self, i):
@@ -404,9 +408,15 @@ class PdfForAI:
                 label = val['alt'] or f"Figure {nfig}"
                 if lean and self.figure_pages:
                     deferred.append({'image': img, 'label': label})
-                    w, h = self.fit(img, content_w * 0.6, 260)  # small copy for people reading along
-                    put_image(img, w, h, self.wrap(f"{label} (full size at the end of the document)",
-                                                   self.fr, self.CAPTION, content_w))
+                    note = f"[{label}: full-size figure at the end of the document]"
+                    if self.inline_copies:
+                        w, h = self.fit(img, content_w * 0.6, 260)  # small copy for people reading along
+                        put_image(img, w, h, self.wrap(note, self.fr, self.CAPTION, content_w))
+                    else:
+                        y -= 4
+                        put_lines(self.wrap(note, self.fr, self.CAPTION, content_w), False, self.CAPTION,
+                                  self.margin, self.CAPTION * self.leading)
+                        y -= 6
                 else:
                     cap = self.wrap(label, self.fr, self.CAPTION, content_w) if val['alt'] else []
                     cap_h = (len(cap) * self.CAPTION * self.leading + 8) if cap else 0
@@ -598,6 +608,8 @@ def main(argv=None):
     ap.add_argument('--figures-per-page', type=int, default=1, metavar='N',
                     help="figures per end page (grid). >1 is read well by Claude, not by GPT at default detail")
     ap.add_argument('--no-numbers', action='store_true', help="don't number headings")
+    ap.add_argument('--inline-copies', action='store_true',
+                    help="also show a small copy of each figure in the text (costs GPT-6 more)")
     a = ap.parse_args(argv)
     md = sys.stdin.read() if a.input == '-' else open(a.input, encoding='utf-8').read()
     reg, bold = (a.font, a.bold or a.font) if a.font else find_fonts()
@@ -605,7 +617,7 @@ def main(argv=None):
         sys.exit("No TrueType font found. Pass --font Regular.ttf --bold Bold.ttf (.ttc collections are not supported).")
     blocks = markdown_to_blocks(md, base_dir='.' if a.input == '-' else os.path.dirname(os.path.abspath(a.input)))
     title = a.title or next((t for k, t in blocks if k == 'h1'), None)
-    n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean', figures_per_page=a.figures_per_page, number_headings=False if a.no_numbers else 'auto').build(blocks, a.output, title=title)
+    n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean', figures_per_page=a.figures_per_page, number_headings=False if a.no_numbers else 'auto', inline_copies=a.inline_copies).build(blocks, a.output, title=title)
     print(f"{a.output}: {n} page(s), {'A4' if a.a4 else 'lean'} layout")
 
 

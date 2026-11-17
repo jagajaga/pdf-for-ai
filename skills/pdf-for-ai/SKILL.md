@@ -26,11 +26,11 @@ Same answers from the model.
 
 ## Rules
 
-- Charts and pictures: put `![caption](file.png)` on its own line (PNG/JPEG). A small copy
-  stays in the text and the full-size figure goes on a normal page at the end, so the AI
-  reads it. Never draw a figure only onto a tall text page (the AI cannot read it). Put
-  important chart numbers in the caption or a table too. `--figures-per-page N` (grid)
-  only when the reader is Claude.
+- Charts and pictures: put `![caption](file.png)` on its own line (PNG/JPEG). The full-size
+  figure goes on a normal page at the end with a reference line in the text, so the AI reads
+  it. Never draw a figure only onto a tall text page (the AI cannot read it). Put important
+  chart numbers in the caption or a table too. `--inline-copies` adds small copies for people
+  (costs GPT-6 ~26% more); `--figures-per-page N` (grid) only when the reader is Claude.
 - Headings get numbered (1, 1.1) so the AI sees the structure; keep tables as `a | b` rows.
 - Never raise the page height or shrink the font: GPT's text extraction breaks on very dense pages.
 - Never hide extra text in a PDF (white text, invisible layers, attachments for the AI):

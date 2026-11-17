@@ -2,28 +2,28 @@
 
 ## X / Threads (short)
 
-PDFs cost AI 3x more than the same text. Not because of the text: Claude bills an image of every page, ~1,560 tokens each, whatever the page size.
+PDFs cost AI 2-3x more than the same text. Not because of the text: Claude bills an image of every page, ~1,560 tokens each, whatever the page size.
 
 So: same PDF, A4 width, a few very tall pages.
 
 26k-word doc on Claude Opus 5.5:
-A4, 83 pages: 191k tokens
-Tall, 5 pages: 62k
-Plain text: 61k
+A4, 39 pages: 121k tokens
+Tall, 3 pages: 62k
+Plain text: 59k
 
 Still a normal PDF. Same answers. No prompt, no plugin.
 Open source, one Python file: github.com/jagajaga/lean-pdf
 
 ## LinkedIn / Telegram (longer)
 
-Your PDF costs AI three times what its text does.
+Your PDF costs AI two to three times what its text does.
 
 When you send a PDF to Claude, GPT or Gemini, the API reads two things: the text of each page and a picture of each page. The picture is billed per page, and its price does not depend on the page size: on Claude it is about 1,560 tokens per page. A 76-page report pays for 76 pictures of text the model already has.
 
 So I made the pages fewer instead of the text shorter. lean-pdf keeps A4 width and puts the text on very tall pages, about 16 A4 pages each. The first page stays A4 so it opens normally. It is an ordinary PDF: real text, opens anywhere, nothing hidden.
 
 Results on a 26,000-word document, measured with the providers' own token counters:
-• Claude Opus 5.5: 191k tokens as A4, 62k as lean, 61k as plain text. 3x cheaper.
+• Claude Opus 5.5: 121k tokens as A4 (39 pages), 62k as lean (3 pages), 59k as plain text. 2x cheaper on this dense text; ~2.7x on a typical PDF page.
 • GPT-5.5: already cheap per page, lean is never worse.
 • Gemini bills per page and gives PDF text for free, so fewer pages is the whole bill.
 Both Claude and GPT answered the same questions correctly from either file.

@@ -8,14 +8,14 @@ lean-pdf keeps A4 width but puts the text on **a few very tall pages** (up to 14
 
 ## Results
 
-Same 26,000-word document (English + Russian), token counts from the providers' own APIs, 17 Nov 2026:
+A 26,000-word text document made with `lean_pdf.py` both ways, token counts from the providers' own APIs (`bench/count_tokens.py`), 17 Nov 2026:
 
-| Model | A4 PDF | lean PDF | plain text |
+| Model | A4 PDF (39 pages) | lean PDF (3 pages) | plain text |
 |---|---|---|---|
-| Claude Opus 5.5 | 191,084 (83 pages) | 62,221 (5 pages) | 60,842 |
-| GPT-5.5 | 41,751 | 40,812 | 41,028 |
+| Claude Opus 5.5 | 121,167 | 61,807 | 58,631 |
+| GPT-5.5 | 40,859 | 40,391 | 38,924 |
 
-- **Claude: 3.1x cheaper**, within ~2% of pasting plain text.
+- **Claude: 2x cheaper** on this dense document, within ~5% of pasting plain text. Each A4 page removed saves about 1,560 tokens, so the less text per page, the bigger the saving: a typical PDF page is ~2,400 tokens uploaded vs ~900 as text ([FileConcat, 195 PDFs](https://fileconcat.com/blog/how-many-tokens-is-a-pdf-in-claude)), which is ~2.7x.
 - **GPT-5.5**: page images are nearly free already, so lean is never worse.
 - **Gemini** (from Google's docs, not measured): PDF text is free and each page costs 258-560 tokens, so fewer pages is the whole bill.
 - **Same answers.** With no special prompt, Claude Opus 5.5 and GPT-5.5 answered the same content questions correctly from the lean and the A4 file.

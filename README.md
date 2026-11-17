@@ -8,17 +8,27 @@ pdf-for-ai keeps A4 width but puts the text on **a few very tall pages** (up to 
 
 ## Results
 
-A 26,000-word text document made with `pdf_for_ai.py` both ways, token counts from the providers' own APIs (`bench/count_tokens.py`), 17 Nov 2026:
+Two text documents, each made with `pdf_for_ai.py` as A4 and as tall pages; input tokens from the providers' own counters (Anthropic `count_tokens`, OpenAI `responses/input_tokens`), 17 Nov 2026.
 
-| Model | A4 PDF (39 pages) | lean PDF (3 pages) | plain text |
+**26,000 words** (A4: 39 pages, tall: 3 pages)
+
+| Model | A4 PDF | tall PDF | plain text |
 |---|---|---|---|
-| Claude Opus 5.5 | 121,167 | 61,807 | 58,631 |
-| GPT-5.5 | 40,859 | 40,391 | 38,924 |
+| Claude Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.2 | 121,167 | 61,807 | 58,631 |
+| GPT-5.5, GPT-5.5 Pro, GPT-5.4 mini, GPT-5.4 nano | 40,859 | 40,391 | 38,924 |
 
-- **Claude: 2x cheaper** on this dense document, within ~5% of pasting plain text. Each A4 page removed saves about 1,560 tokens, so the less text per page, the bigger the saving: a typical PDF page is ~2,400 tokens uploaded vs ~900 as text ([FileConcat, 195 PDFs](https://fileconcat.com/blog/how-many-tokens-is-a-pdf-in-claude)), which is ~2.7x.
-- **GPT-5.5**: page images are nearly free already, so lean is never worse.
-- **Gemini** (from Google's docs, not measured): PDF text is free and each page costs 258-560 tokens, so fewer pages is the whole bill.
-- **Same answers.** With no special prompt, Claude Opus 5.5 and GPT-5.5 answered the same content questions correctly from the lean and the A4 file.
+**6,500 words** (A4: 6 pages, tall: 2 pages)
+
+| Model | A4 PDF | tall PDF | plain text |
+|---|---|---|---|
+| Claude (all four above) | 19,730 | 12,395 | 10,012 |
+| GPT (all four above) | 7,027 | 6,975 | 6,633 |
+
+- **Claude: 1.6-2x cheaper.** All current Claude models count the same: about 1,560 tokens per page image, whatever the page size. Every A4 page you remove saves that.
+- **GPT: about the same either way** (around 12 tokens per page image), so tall pages never cost more. Note GPT's tokenizer needs ~35% fewer tokens for the same text than Claude's.
+- **Gemini** (from Google's docs, not measured): PDF text is free and each page costs 258-560 tokens, so the bill is the page count.
+- **Same answers.** With no special prompt, Claude Opus 5.5 and GPT-5.5 answered the same content questions correctly from the tall and the A4 file.
+- The less text per page, the bigger the saving: a typical PDF page is ~2,400 tokens uploaded vs ~900 as text ([FileConcat, 195 PDFs](https://fileconcat.com/blog/how-many-tokens-is-a-pdf-in-claude)).
 
 ## Use
 

@@ -1,0 +1,31 @@
+---
+name: lean-pdf
+description: Make every PDF AI-cheap - few very tall pages instead of many A4 pages, so Claude/GPT/Gemini read it at about plain-text token cost. Use whenever you create a PDF from text or Markdown (reports, summaries, notes, briefs).
+---
+
+# lean-pdf
+
+AI APIs read a PDF as each page's text plus one image per page, and bill the image
+per page whatever its size (Claude: ~1,560 tokens/page). So make text PDFs with as
+few pages as possible: A4 width, very tall pages. Measured on a 26k-word document,
+Claude Opus 5.5: A4 83 pages = 191k tokens, lean 5 pages = 62k, plain text = 61k.
+Same answers from the model.
+
+## How
+
+1. Write the content as Markdown, real paragraphs (not one line per wrapped line).
+2. Run `python3 {baseDir}/lean_pdf.py input.md output.pdf`
+   (standard library only; fonts found automatically, or `--font R.ttf --bold B.ttf`).
+3. Check: it prints the page count; open the text with any PDF text tool if unsure.
+
+## When to use A4 instead (`--a4`)
+
+- the user asks for print/A4, or the document is a letter, contract or form to print or sign;
+- a recipient requires normal pages.
+
+## Rules
+
+- Charts or images the AI must see: put them on normal-size pages (a tall page image
+  is downscaled to a strip). lean_pdf.py makes text documents only.
+- Never hide extra text in a PDF (white text, invisible layers, attachments for the AI):
+  APIs ignore attachments and hidden text is a prompt-injection pattern.

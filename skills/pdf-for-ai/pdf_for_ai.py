@@ -13,14 +13,17 @@ automatically on Linux, macOS and Windows, or pass --font/--bold.
   python3 pdf_for_ai.py input.md output.pdf          # lean (default)
   python3 pdf_for_ai.py input.md output.pdf --a4     # classic A4, for print
 
-Images: put ![caption](chart.png) on its own line (PNG or JPEG). Each figure gets
-its own normal-size page, so the AI sees it at full resolution; text stays tall.
+Images: put ![caption](chart.png) on its own line (PNG or JPEG). A small copy stays
+in the text; the full-size figure goes on a normal-size page at the end, so the AI
+sees it at full resolution and the text stays in one cheap piece.
+Headings are numbered (1, 1.1) unless the source already numbers them: the AI gets
+headings as plain lines, and numbers keep the levels visible.
 
 License: MIT. https://github.com/jagajaga/pdf-for-ai
 """
 import argparse, os, re, struct, sys, zlib
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 FONT_CANDIDATES = [
     ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -250,12 +253,20 @@ class PdfForAI:
     }
     CAPTION = 9.5
 
-    def __init__(self, regular_ttf, bold_ttf, layout='lean', margin=56, leading=1.38, figure_pages=True):
-        """figure_pages (lean layout): each image gets its own normal-size page, so the
-        AI's page image shows it at full resolution. Text stays on tall pages."""
+    THIN_GLYPH_PT = 3.0      # glyphs narrower than this are what GPT's extractor drops
+    THIN_GLYPHS_PER_PAGE = 35000  # GPT text got damaged above ~50k on one page; keep margin
+
+    def __init__(self, regular_ttf, bold_ttf, layout='lean', margin=56, leading=1.38,
+                 figure_pages=True, figures_per_page=1, number_headings='auto'):
+        """figure_pages (lean): a small copy of each figure stays in the text and the full-size
+        figure goes on a normal-size page at the end (keeps the text in one cheap piece).
+        figures_per_page > 1: grid of figures on each end page (Claude reads it; GPT-5.5 at
+        default detail does not). number_headings: 'auto' (number if the source has no numbers),
+        True or False; numbers make heading levels visible to AI, which gets headings as plain lines."""
         self.fr, self.fb = parse_ttf(regular_ttf), parse_ttf(bold_ttf)
         self.layout, self.margin, self.leading = layout, margin, leading
-        self.figure_pages = figure_pages
+        self.figure_pages, self.figures_per_page = figure_pages, max(1, int(figures_per_page))
+        self.number_headings = number_headings
         self.width = A4_W
 
     def page_height(self, i):
@@ -271,6 +282,16 @@ class PdfForAI:
             total += w[gid] if gid < len(w) else w[0]
         return total / font['units_per_em'] * size
 
+    def thin_glyphs(self, text, font, size):
+        u2g, w, upm = font['unicode_to_gid'], font['widths'], font['units_per_em']
+        lim = self.THIN_GLYPH_PT * upm / size
+        n = 0
+        for ch in text:
+            gid = u2g.get(ord(ch), 0)
+            if (w[gid] if gid < len(w) else w[0]) < lim:
+                n += 1
+        return n + 1  # the line break
+
     def wrap(self, text, font, size, max_w):
         lines, cur = [], ''
         for word in text.split(' '):
@@ -282,52 +303,115 @@ class PdfForAI:
         lines.append(cur)
         return lines
 
+    def numbered(self, blocks):
+        heads = [(i, k, v) for i, (k, v) in enumerate(blocks) if k in ('h1', 'h2', 'h3')]
+        if not heads or self.number_headings is False:
+            return blocks
+        if self.number_headings == 'auto' and any(re.match(r'^\d+(\.\d+)*[.)]?\s', v) for _, _, v in heads):
+            return blocks
+        levels = sorted({k for _, k, _ in heads})
+        if levels[0] == 'h1' and sum(1 for _, k, _ in heads if k == 'h1') == 1 and heads[0][1] == 'h1':
+            levels = levels[1:]  # a single h1 at the top is the title: leave it unnumbered
+        if not levels:
+            return blocks
+        out, counters = list(blocks), [0, 0, 0]
+        for i, k, v in heads:
+            if k not in levels:
+                continue
+            d = levels.index(k)
+            counters[d] += 1
+            for j in range(d + 1, 3):
+                counters[j] = 0
+            num = '.'.join(str(c) for c in counters[:d + 1])
+            out[i] = (k, f"{num}{'.' if d == 0 else ''} {v}")
+        return out
+
+    def fit(self, img, max_w, max_h):
+        s = min(max_w / img['w'], max_h / img['h'])
+        return img['w'] * s, img['h'] * s
+
+    def figure_page(self, figs):
+        """One normal-size page with 1..n figures (grid of 2 columns when n > 1)."""
+        content_w = self.width - 2 * self.margin
+        cols = 1 if len(figs) == 1 else 2
+        rows = [figs[i:i + cols] for i in range(0, len(figs), cols)]
+        gap = 18
+        cell_w = (content_w - gap * (cols - 1)) / cols
+        cs = self.CAPTION if cols == 1 else 8
+        layout = []
+        for row in rows:
+            caps = [self.wrap(f['label'], self.fr, cs, cell_w) for f in row]
+            cap_h = max(len(c) for c in caps) * cs * self.leading + 8
+            max_h = (A4_H - 2 * self.margin) / len(rows) - cap_h - (gap if len(rows) > 1 else 0)
+            sizes = [self.fit(f['image'], cell_w, max_h) for f in row]
+            layout.append((row, caps, sizes, max(h for _, h in sizes), cap_h))
+        ph = round(2 * self.margin + sum(r[3] + r[4] for r in layout) + gap * (len(layout) - 1), 2)
+        items, y = [], ph - self.margin
+        for row, caps, sizes, row_h, cap_h in layout:
+            for c, (f, cap, (w, h)) in enumerate(zip(row, caps, sizes)):
+                x0 = self.margin + c * (cell_w + gap)
+                items.append(('i', f['image'], x0 + (cell_w - w) / 2, y - h, w, h))
+                cy = y - row_h - 8
+                for ln in cap:
+                    cy -= cs * self.leading
+                    items.append(('t', ln, False, cs, x0, cy))
+            y -= row_h + cap_h + gap
+        return {'h': ph, 'items': items, 'fixed': True, 'thin': 0}
+
     def layout_blocks(self, blocks):
         """Returns pages: dicts {h, items, fixed}; items are
         ('t', text, bold, size, x, y) and ('i', image, x, y, w, h)."""
-        pages = []
+        blocks = self.numbered(blocks)
+        pages, deferred = [], []
         content_w = self.width - 2 * self.margin
-        page = {'h': self.page_height(0), 'items': [], 'fixed': False}
+        lean = self.layout == 'lean'
+        page = {'h': self.page_height(0), 'items': [], 'fixed': False, 'thin': 0}
         y = page['h'] - self.margin
 
         def new_page():
             nonlocal y, page
             if page['items']:
                 pages.append(page)
-            page = {'h': self.page_height(len(pages)), 'items': [], 'fixed': False}
+            page = {'h': self.page_height(len(pages)), 'items': [], 'fixed': False, 'thin': 0}
             y = page['h'] - self.margin
 
+        def put_lines(lines, bold, size, x, lh):
+            nonlocal y
+            font = self.fb if bold else self.fr
+            for ln in lines:
+                thin = self.thin_glyphs(ln, font, size) if lean else 0
+                if y - lh < self.margin or (lean and page['thin'] + thin > self.THIN_GLYPHS_PER_PAGE):
+                    new_page()
+                y -= lh
+                page['thin'] += thin
+                page['items'].append(('t', ln, bold, size, x, y))
+
+        def put_image(img, w, h, cap_lines):
+            nonlocal y
+            cap_h = (len(cap_lines) * self.CAPTION * self.leading + 8) if cap_lines else 0
+            if y - (h + cap_h + 12) < self.margin and page['items']:
+                new_page()
+            y -= 6 + h
+            page['items'].append(('i', img, self.margin + (content_w - w) / 2, y, w, h))
+            y -= 8
+            put_lines(cap_lines, False, self.CAPTION, self.margin, self.CAPTION * self.leading)
+            y -= 6
+
+        nfig = 0
         for kind, val in blocks:
             if kind == 'img':
-                img = val['image']
-                cap = self.wrap(val['alt'], self.fr, self.CAPTION, content_w) if val['alt'] else []
-                cap_h = (len(cap) * self.CAPTION * self.leading + 8) if cap else 0
-                max_h = A4_H - 2 * self.margin - cap_h
-                scale = min(content_w / img['w'], max_h / img['h'])
-                w, h = img['w'] * scale, img['h'] * scale
-                x = self.margin + (content_w - w) / 2
-                if self.layout == 'lean' and self.figure_pages:
-                    if page['items']:
-                        pages.append(page)
-                    ph = round(h + cap_h + 2 * self.margin, 2)  # page fits the figure
-                    fig = {'h': ph, 'items': [('i', img, x, ph - self.margin - h, w, h)], 'fixed': True}
-                    cy = ph - self.margin - h - 8
-                    for ln in cap:
-                        cy -= self.CAPTION * self.leading
-                        fig['items'].append(('t', ln, False, self.CAPTION, self.margin, cy))
-                    pages.append(fig)
-                    page = {'h': LEAN_PAGE_H, 'items': [], 'fixed': False}
-                    y = page['h'] - self.margin
-                    continue
-                if y - (h + cap_h + 12) < self.margin and page['items']:
-                    new_page()
-                y -= 6 + h
-                page['items'].append(('i', img, x, y, w, h))
-                y -= 8
-                for ln in cap:
-                    y -= self.CAPTION * self.leading
-                    page['items'].append(('t', ln, False, self.CAPTION, self.margin, y))
-                y -= 6
+                img, nfig = val['image'], nfig + 1
+                label = val['alt'] or f"Figure {nfig}"
+                if lean and self.figure_pages:
+                    deferred.append({'image': img, 'label': label})
+                    w, h = self.fit(img, content_w * 0.6, 260)  # small copy for people reading along
+                    put_image(img, w, h, self.wrap(f"{label} (full size at the end of the document)",
+                                                   self.fr, self.CAPTION, content_w))
+                else:
+                    cap = self.wrap(label, self.fr, self.CAPTION, content_w) if val['alt'] else []
+                    cap_h = (len(cap) * self.CAPTION * self.leading + 8) if cap else 0
+                    w, h = self.fit(img, content_w, A4_H - 2 * self.margin - cap_h)
+                    put_image(img, w, h, cap)
                 continue
             size, bold, gap_b, gap_a, indent = self.STYLES.get(kind, self.STYLES['p'])
             font = self.fb if bold else self.fr
@@ -339,14 +423,13 @@ class PdfForAI:
             if y - (gap_b + len(lines) * lh + gap_a) < self.margin and page['items'] and (kind.startswith('h') or len(lines) < 8):
                 new_page()  # keep headings and short blocks together
             y -= gap_b
-            for ln in lines:
-                if y - lh < self.margin:
-                    new_page()
-                y -= lh
-                page['items'].append(('t', ln, bold, size, self.margin + indent, y))
+            put_lines(lines, bold, size, self.margin + indent, lh)
             y -= gap_a
         if page['items']:
             pages.append(page)
+        n = self.figures_per_page
+        for i in range(0, len(deferred), n):
+            pages.append(self.figure_page(deferred[i:i + n]))
         return pages
 
     def build(self, blocks, out_path, title=None):
@@ -512,6 +595,9 @@ def main(argv=None):
     ap.add_argument('--font', help="regular .ttf font (needs --bold too)")
     ap.add_argument('--bold', help="bold .ttf font")
     ap.add_argument('--title', help="document title (default: first heading)")
+    ap.add_argument('--figures-per-page', type=int, default=1, metavar='N',
+                    help="figures per end page (grid). >1 is read well by Claude, not by GPT at default detail")
+    ap.add_argument('--no-numbers', action='store_true', help="don't number headings")
     a = ap.parse_args(argv)
     md = sys.stdin.read() if a.input == '-' else open(a.input, encoding='utf-8').read()
     reg, bold = (a.font, a.bold or a.font) if a.font else find_fonts()
@@ -519,7 +605,7 @@ def main(argv=None):
         sys.exit("No TrueType font found. Pass --font Regular.ttf --bold Bold.ttf (.ttc collections are not supported).")
     blocks = markdown_to_blocks(md, base_dir='.' if a.input == '-' else os.path.dirname(os.path.abspath(a.input)))
     title = a.title or next((t for k, t in blocks if k == 'h1'), None)
-    n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean').build(blocks, a.output, title=title)
+    n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean', figures_per_page=a.figures_per_page, number_headings=False if a.no_numbers else 'auto').build(blocks, a.output, title=title)
     print(f"{a.output}: {n} page(s), {'A4' if a.a4 else 'lean'} layout")
 
 

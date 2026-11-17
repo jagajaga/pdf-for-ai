@@ -3,7 +3,7 @@
 Usage: ANTHROPIC_API_KEY=... [OPENAI_API_KEY=...] python3 bench/count_tokens.py doc.md"""
 import base64, json, os, sys, tempfile, urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from lean_pdf import LeanPDF, markdown_to_blocks, find_fonts
+from pdf_for_ai import PdfForAI, markdown_to_blocks, find_fonts
 
 def post(url, headers, body):
     req = urllib.request.Request(url, json.dumps(body).encode(), {**headers, 'content-type': 'application/json'})
@@ -27,7 +27,7 @@ tmp = tempfile.mkdtemp()
 pdfs = {}
 for layout in ('a4', 'lean'):
     path = os.path.join(tmp, layout + '.pdf')
-    n = LeanPDF(*find_fonts(), layout=layout).build(blocks, path)
+    n = PdfForAI(*find_fonts(), layout=layout).build(blocks, path)
     pdfs[layout] = (n, base64.b64encode(open(path, 'rb').read()).decode())
 
 if os.environ.get('ANTHROPIC_API_KEY'):

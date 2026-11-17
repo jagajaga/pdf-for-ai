@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""lean-pdf: Markdown -> a normal PDF that AI models read at almost plain-text cost.
+"""pdf-for-ai: Markdown -> a normal PDF that AI models read at almost plain-text cost.
 
 Why: AI APIs (Claude, Gemini, OpenAI) read a PDF as the extracted text of each page
 PLUS one image of each page, and the image is billed per page whatever the page size
-(Claude: ~1,600 tokens/page). So lean-pdf keeps A4 width but puts the text on a few
+(Claude: ~1,600 tokens/page). So pdf-for-ai keeps A4 width but puts the text on a few
 very tall pages (up to 14,400 pt, the Acrobat limit). Page 1 stays A4-sized so
 viewers open a normal window. Real embedded text, nothing hidden.
 
 Standard library only. Needs one TrueType (.ttf) font pair on disk; found
 automatically on Linux, macOS and Windows, or pass --font/--bold.
 
-  python3 lean_pdf.py input.md output.pdf          # lean (default)
-  python3 lean_pdf.py input.md output.pdf --a4     # classic A4, for print
+  python3 pdf_for_ai.py input.md output.pdf          # lean (default)
+  python3 pdf_for_ai.py input.md output.pdf --a4     # classic A4, for print
 
-License: MIT. https://github.com/jagajaga/lean-pdf
+License: MIT. https://github.com/jagajaga/pdf-for-ai
 """
 import argparse, os, re, struct, sys, zlib
 
@@ -157,7 +157,7 @@ def _pdf_string(s):
     return '<FEFF' + s.encode('utf-16-be').hex().upper() + '>'
 
 
-class LeanPDF:
+class PdfForAI:
     STYLES = {  # size, bold, gap before, gap after, indent
         'h1': (18, True, 18, 8, 0), 'h2': (14, True, 14, 6, 0), 'h3': (12, True, 10, 4, 0),
         'p': (10.5, False, 0, 6, 0), 'li': (10.5, False, 1, 2, 14), 'pre': (9.5, False, 0, 0, 10),
@@ -246,7 +246,7 @@ class LeanPDF:
             return add(('D', f"<< /Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H "
                              f"/DescendantFonts [{cid} 0 R] /ToUnicode {tu} 0 R >>"))
 
-        f1, f2 = embed(self.fr, 'LeanRegular'), embed(self.fb, 'LeanBold')
+        f1, f2 = embed(self.fr, 'PdfForAIRegular'), embed(self.fb, 'PdfForAIBold')
         kids = []
         for i, lines in enumerate(pages):
             top = self.page_height(i)
@@ -265,7 +265,7 @@ class LeanPDF:
         objs[1] = ('D', f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>")
         objs[0] = ('D', f"<< /Type /Catalog /Pages 2 0 R /OpenAction [{kids[0]} 0 R /FitH null] "
                         f"/PageLayout /OneColumn /PageMode /UseNone >>")
-        info = add(('D', f"<< /Producer (lean-pdf {__version__})" + (f" /Title {_pdf_string(title)}" if title else "") + " >>"))
+        info = add(('D', f"<< /Producer (pdf-for-ai {__version__})" + (f" /Title {_pdf_string(title)}" if title else "") + " >>"))
 
         out = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
@@ -358,7 +358,7 @@ def main(argv=None):
         sys.exit("No TrueType font found. Pass --font Regular.ttf --bold Bold.ttf (.ttc collections are not supported).")
     blocks = markdown_to_blocks(md)
     title = a.title or next((t for k, t in blocks if k == 'h1'), None)
-    n = LeanPDF(reg, bold, layout='a4' if a.a4 else 'lean').build(blocks, a.output, title=title)
+    n = PdfForAI(reg, bold, layout='a4' if a.a4 else 'lean').build(blocks, a.output, title=title)
     print(f"{a.output}: {n} page(s), {'A4' if a.a4 else 'lean'} layout")
 
 

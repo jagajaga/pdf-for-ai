@@ -12,7 +12,7 @@ Tall, 3 pages: 62k
 Plain text: 59k
 
 Still a normal PDF. Same answers. No prompt, no plugin.
-Open source, one Python file: github.com/jagajaga/lean-pdf
+Open source, one Python file: github.com/jagajaga/pdf-for-ai
 
 ## LinkedIn / Telegram (longer)
 
@@ -20,7 +20,7 @@ Your PDF costs AI two to three times what its text does.
 
 When you send a PDF to Claude, GPT or Gemini, the API reads two things: the text of each page and a picture of each page. The picture is billed per page, and its price does not depend on the page size: on Claude it is about 1,560 tokens per page. A 76-page report pays for 76 pictures of text the model already has.
 
-So I made the pages fewer instead of the text shorter. lean-pdf keeps A4 width and puts the text on very tall pages, about 16 A4 pages each. The first page stays A4 so it opens normally. It is an ordinary PDF: real text, opens anywhere, nothing hidden.
+So I made the pages fewer instead of the text shorter. pdf-for-ai keeps A4 width and puts the text on very tall pages, about 16 A4 pages each. The first page stays A4 so it opens normally. It is an ordinary PDF: real text, opens anywhere, nothing hidden.
 
 Results on a 26,000-word document, measured with the providers' own token counters:
 • Claude Opus 5.5: 121k tokens as A4 (39 pages), 62k as lean (3 pages), 59k as plain text. 2x cheaper on this dense text; ~2.7x on a typical PDF page.
@@ -32,6 +32,6 @@ I first tried hiding a Markdown copy inside the PDF. The AI never saw it: the AP
 
 As far as I could find, nobody does this yet: people measured that page size does not change the price, and new AI formats are being proposed (DocLang, .rec), but those need new readers or prompts.
 
-One Python file, no dependencies, plus a skill so your AI agent makes every PDF this way: github.com/jagajaga/lean-pdf
+One Python file, no dependencies, plus a skill so your AI agent makes every PDF this way: github.com/jagajaga/pdf-for-ai
 
 Not for printing (use --a4) or for charts the AI must see.

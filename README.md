@@ -40,6 +40,34 @@ Two text documents, each made with `pdf_for_ai.py` as A4 and as tall pages; inpu
 - **Same answers.** With no special prompt, Claude Opus 5.5 and GPT-5.5 answered the same content questions correctly from the tall and the A4 file.
 - The less text per page, the bigger the saving: a typical PDF page is ~2,400 tokens uploaded vs ~900 as text ([FileConcat, 195 PDFs](https://fileconcat.com/blog/how-many-tokens-is-a-pdf-in-claude)).
 
+## One scale for every model
+
+Tokens are not comparable between providers (GPT's tokenizer packs ~4.3 English characters into a token, Claude's ~2.8), so here is the same 200,000-character document on two common scales. English: the "Attention" paper repeated; Russian: the Wikipedia article "История России". Counted 17 Nov 2026; a real paid Claude Opus 5.5 call billed exactly the counted tokens (79,512 + 21 for the question).
+
+**Cost relative to sending the plain text (1.00 = same as text)**
+
+| Provider | Language | A4 PDF | pdf-for-ai |
+|---|---|---|---|
+| Claude (all 4 models) | English | 2.23 | **1.05** |
+| Claude | Russian | 2.10 | **1.06** |
+| GPT (all 4 models) | English | 1.05 | 1.04 |
+| GPT | Russian | 1.08 | 1.07 |
+
+**Dollars per document (input only, list prices on 17 Nov 2026)**
+
+| Model | $/M input | A4 PDF | pdf-for-ai | plain text |
+|---|---|---|---|---|
+| Claude Fable 5.2 | 8 | $1.27 | $0.60 | $0.57 |
+| Claude Opus 5.5 | 4 | $0.64 | $0.30 | $0.29 |
+| Claude Sonnet 5.5 | 2 | $0.32 | $0.15 | $0.14 |
+| Claude Haiku 5.5 | 0.10 / 0.50 over 100k | $0.080 | $0.007 | $0.007 |
+| GPT-5.5 Pro | 30 | $1.46 | $1.44 | $1.39 |
+| GPT-5.5 | 5 | $0.24 | $0.24 | $0.23 |
+| GPT-5.4 mini | 0.75 | $0.037 | $0.036 | $0.035 |
+| GPT-5.4 nano | 0.20 | $0.010 | $0.010 | $0.009 |
+
+(English shown; Russian is within ~10%.) On Claude Haiku 5.5 the A4 PDF crosses the 100k-token price step, so it costs 11x the pdf-for-ai file. On GPT the layout barely matters: GPT already makes no picture of text pages.
+
 ## Use
 
 ```
